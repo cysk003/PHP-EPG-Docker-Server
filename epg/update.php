@@ -47,11 +47,12 @@ function deleteOldData($db, $keep_days, &$log_messages) {
     }
 }
 
-// 格式化时间函数
+// 格式化时间函数，同时转化为 UTC+8 时间
 function getFormatTime($time) {
+    $date = DateTime::createFromFormat('YmdHis O', $time)->setTimezone(new DateTimeZone('+0800'));
     return [
-        'date' => substr($time, 0, 4) . '-' . substr($time, 4, 2) . '-' . substr($time, 6, 2),
-        'time' => strlen($time) >= 12 ? substr($time, 8, 2) . ':' . substr($time, 10, 2) : ''
+        'date' => $date->format('Y-m-d'),
+        'time' => $date->format('H:i')
     ];
 }
 
