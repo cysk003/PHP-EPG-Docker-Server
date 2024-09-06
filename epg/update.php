@@ -49,7 +49,8 @@ function deleteOldData($db, $keep_days, &$log_messages) {
 
 // 格式化时间函数，同时转化为 UTC+8 时间
 function getFormatTime($time) {
-    $date = DateTime::createFromFormat('YmdHis O', $time)->setTimezone(new DateTimeZone('+0800'));
+    $time = str_replace(' ', '', $time);
+    $date = DateTime::createFromFormat('YmdHisO', $time)->setTimezone(new DateTimeZone('+0800'));
     return [
         'date' => $date->format('Y-m-d'),
         'time' => $date->format('H:i')
