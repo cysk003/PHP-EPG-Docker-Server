@@ -149,6 +149,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update'])) {
 
     // 获取表单数据并去除每个 URL 末尾的换行符
     $xml_urls = array_map('trim', explode("\n", trim($_POST['xml_urls'])));
+
+    // 过滤和规范化 xml_urls
+    $xml_urls = array_values(array_map(function($url) {
+        return preg_replace('/^#\s*(?:#\s*)*(\S+)(\s*#.*)?$/', '# $1$2', trim($url));
+    }, $xml_urls));
+    
     $days_to_keep = intval($_POST['days_to_keep']);
     $gen_xml = isset($_POST['gen_xml']) ? intval($_POST['gen_xml']) : $Config['gen_xml'];
     $include_future_only = isset($_POST['include_future_only']) ? intval($_POST['include_future_only']) : $Config['include_future_only'];
@@ -174,13 +180,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update'])) {
         }
     }
 
-    // 处理频道指定 EPG 数据
+    // 处理频道指定 EPG 数据，去掉 epg_src 前面的【已停用】
     $channel_bind_epg = isset($_POST['channel_bind_epg']) ? 
         array_filter(
-            array_column(json_decode($_POST['channel_bind_epg'], true), 'channels', 'epg_src'), 
-            function($channels) {
-                return !empty($channels);
-            }
+            array_reduce(json_decode($_POST['channel_bind_epg'], true), function($result, $item) {
+                $epgSrc = preg_replace('/^【已停用】/', '', $item['epg_src']);
+                if (!empty($item['channels'])) {
+                    $result[$epgSrc] = $item['channels'];
+                }
+                return $result;
+            }, [])
         ) : [];
 
     // 获取旧的配置
@@ -255,7 +264,7 @@ try {
             $channels = $db->query("SELECT DISTINCT UPPER(channel) FROM epg_data ORDER BY UPPER(channel) ASC")->fetchAll(PDO::FETCH_COLUMN);
 
             // 创建反向映射关系，排除正则表达式映射
-            $channelMappings = $Config['channel_mappings'];            
+            $channelMappings = $Config['channel_mappings'];
             $reverseMappings = [];
             foreach ($channelMappings as $search => $replace) {
                 if (strpos($search, 'regex:') === 0) {
@@ -297,18 +306,8 @@ try {
         elseif (isset($_GET['get_channel_bind_epg'])) {
             // 从数据库中获取频道
             $channels = $db->query("SELECT DISTINCT UPPER(channel) FROM epg_data ORDER BY UPPER(channel) ASC")->fetchAll(PDO::FETCH_COLUMN);
-            
-            $channelBindEpg = $Config['channel_bind_epg'] ?? [];
-            // 去除键中以【已停用】开头的部分
-            $channelBindEpg = array_map(
-                function($epgSrc) {
-                    // 去掉键开头的【已停用】
-                    return preg_replace('/^【已停用】/', '', $epgSrc);
-                },
-                array_flip($channelBindEpg)
-            );
-            $channelBindEpg = array_flip($channelBindEpg);            
 
+            $channelBindEpg = $Config['channel_bind_epg'] ?? [];
             $xmlUrls = $Config['xml_urls'];
 
             // 过滤 xml_urls，同时重置下标
@@ -321,27 +320,20 @@ try {
                 return trim($url); // 去掉多余空格
             }, $xmlUrls));
 
-            // 将 $filteredUrls 分为正常和已停用的 URL
-            $dbResponse = array_merge(
-                array_map(function($epgSrc) use ($channelBindEpg) {
-                    $cleanEpgSrc = trim(preg_replace('/^\s*#\s*/', '', $epgSrc));
-                    return [
-                        'epg_src' => $cleanEpgSrc,
-                        'channels' => $channelBindEpg[$cleanEpgSrc] ?? ''
-                    ];
-                }, array_filter($filteredUrls, function($epgSrc) {
-                    return strpos(trim($epgSrc), '#') !== 0;
-                })),
+            // 生成 $dbResponse
+            $dbResponse = array_map(function($epgSrc) use ($channelBindEpg) {
+                $cleanEpgSrc = trim(preg_replace('/^\s*#\s*/', '', $epgSrc));
+                $isInactive = strpos(trim($epgSrc), '#') === 0;
+                return [
+                    'epg_src' => ($isInactive ? '【已停用】' : '') . $cleanEpgSrc,
+                    'channels' => $channelBindEpg[$cleanEpgSrc] ?? ''
+                ];
+            }, $filteredUrls);
 
-                array_map(function($epgSrc) use ($channelBindEpg) {
-                    $cleanEpgSrc = trim(preg_replace('/^\s*#\s*/', '', $epgSrc));
-                    return [
-                        'epg_src' => '【已停用】' . ltrim($cleanEpgSrc, '#'),
-                        'channels' => $channelBindEpg[$cleanEpgSrc] ?? ''
-                    ];
-                }, array_filter($filteredUrls, function($epgSrc) {
-                    return strpos(trim($epgSrc), '#') === 0;
-                }))
+            // 将已停用的放到后面
+            $dbResponse = array_merge(
+                array_filter($dbResponse, fn($item) => strpos($item['epg_src'], '【已停用】') === false),
+                array_filter($dbResponse, fn($item) => strpos($item['epg_src'], '【已停用】') !== false)
             );
         }
 
@@ -875,7 +867,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'GET' && isset($_GET['url'])) {
                 break;
             case 'channelbindepg':
                 modal = document.getElementById("channelBindEPGModal");
-                logSpan = document.getElementsByClassName("close")[4];                
+                logSpan = document.getElementsByClassName("close")[4];
                 fetchLogs('<?php echo $_SERVER['PHP_SELF']; ?>?get_channel_bind_epg=true', updateChannelBindEPGList);
                 break;
             case 'channelmatch':
