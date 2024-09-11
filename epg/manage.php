@@ -332,8 +332,8 @@ try {
 
             // 将已停用的放到后面
             $dbResponse = array_merge(
-                array_filter($dbResponse, fn($item) => strpos($item['epg_src'], '【已停用】') === false),
-                array_filter($dbResponse, fn($item) => strpos($item['epg_src'], '【已停用】') !== false)
+                array_filter($dbResponse, function($item) { return strpos($item['epg_src'], '【已停用】') === false; }),
+                array_filter($dbResponse, function($item) { return strpos($item['epg_src'], '【已停用】') !== false; })
             );
         }
 
